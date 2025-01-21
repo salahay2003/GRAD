@@ -1,0 +1,6 @@
+flask
+flask-cors
+Pillow
+tensorflow  # or any other deep learning framework you're using, like torch
+opencv-python
+scikit-learn
