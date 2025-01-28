@@ -147,8 +147,13 @@ function selectFrameLayers() {
         const frame = node;
         figma.notify(`Frame "${frame.name}" selected.`);
         const allLayers = frame.findAll().reverse(); // Find all layers within the frame
-        // Convert allLayers to the desired format and reverse the order
-        const layers = allLayers.map((layer) => ({ name: layer.name })).reverse();
+        // Convert allLayers to include the same properties as in handleAssignColorMessage
+        const layers = allLayers.map((layer, idx) => {
+            const newName = `${layer.name}_${idx}`; // Create a unique name based on the index
+            layer.name = newName; // Update the layer name directly
+            const color = getLayerColor(layer); // Extract the color using the getLayerColor function
+            return { name: newName, color: color }; // Return objects with the same properties
+        });
         return layers; // Return the array of layers
     });
 }
@@ -157,7 +162,7 @@ function handleAssignColorAIVersion(prompt) {
         try {
             const layers = yield selectFrameLayers();
             const colorCodesList = yield fetchAIColorPalette(prompt);
-            // assignColorsToLayers(layers, colorCodesList);
+            assignColorsToLayers(layers, colorCodesList, 1);
         }
         catch (error) {
             console.error(error);
@@ -197,28 +202,30 @@ function sendToAPI(imageData) {
     });
 }
 function createColorPaletteOnCanvasAI(colorPalette) {
-    const nodes = [];
-    colorPalette.forEach((color, index) => {
-        const rect = figma.createRectangle();
-        rect.x = 100 + index * 110; // Position rectangles with some spacing
-        rect.y = 100;
-        rect.resize(100, 100);
-        rect.fills = [
-            { type: "SOLID", color: hexToRgb(color), boundVariables: {} },
-        ];
-        figma.currentPage.appendChild(rect);
-        nodes.push(rect);
-    });
-    figma.currentPage.selection = nodes;
-    figma.viewport.scrollAndZoomIntoView(nodes);
-}
-function createColorPaletteOnCanvas(colorPalettes) {
-    const nodes = [];
-    colorPalettes.forEach((palette, paletteIndex) => {
-        palette.forEach((color, colorIndex) => {
+    return __awaiter(this, void 0, void 0, function* () {
+        const nodes = [];
+        const selection = figma.currentPage.selection;
+        if (selection.length === 0 || selection[0].type !== "FRAME") {
+            figma.notify("Please select a frame first.");
+            return;
+        }
+        const selectedFrame = selection[0]; // Cast to FrameNode
+        const startX = selectedFrame.x; // Frame's X position
+        const startY = selectedFrame.y; // Frame's Y position
+        yield figma.loadFontAsync({ family: "Inter", style: "Regular" });
+        colorPalette.forEach((color, index) => {
+            const text = figma.createText();
+            figma.currentPage.appendChild(text);
+            text.x = startX; // Align with the first color
+            text.y = startY - 210; // Position above the palette
+            text.characters = `AI generated palette`;
+            text.fontSize = 26;
+            text.fontName = { family: "Inter", style: "Regular" };
+            text.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+            nodes.push(text);
             const rect = figma.createRectangle();
-            rect.x = 100 + colorIndex * 110; // Position rectangles with some spacing
-            rect.y = 100 + paletteIndex * 110; // Space rows apart
+            rect.x = startX + index * 110; // Position rectangles with some spacing
+            rect.y = startY - 170;
             rect.resize(100, 100);
             rect.fills = [
                 { type: "SOLID", color: hexToRgb(color), boundVariables: {} },
@@ -226,9 +233,47 @@ function createColorPaletteOnCanvas(colorPalettes) {
             figma.currentPage.appendChild(rect);
             nodes.push(rect);
         });
+        figma.currentPage.selection = nodes;
     });
-    figma.currentPage.selection = nodes;
-    figma.viewport.scrollAndZoomIntoView(nodes);
+}
+function createColorPaletteOnCanvas(colorPalettes) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const nodes = [];
+        const selection = figma.currentPage.selection;
+        if (selection.length === 0 || selection[0].type !== "FRAME") {
+            figma.notify("Please select a frame first.");
+            return;
+        }
+        const selectedFrame = selection[0]; // Cast to FrameNode
+        const startX = selectedFrame.x; // Frame's X position
+        const startY = selectedFrame.y + 800; // Frame's Y position
+        yield figma.loadFontAsync({ family: "Inter", style: "Regular" });
+        colorPalettes.forEach((palette, paletteIndex) => {
+            // Create a text label for each palette
+            const text = figma.createText();
+            figma.currentPage.appendChild(text);
+            text.x = startX; // Align with the first color
+            text.y = (startY + paletteIndex * 150) - 30; // Position above the palette
+            text.characters = `Palette ${paletteIndex + 1}`;
+            text.fontSize = 26;
+            text.fontName = { family: "Inter", style: "Regular" };
+            text.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+            nodes.push(text);
+            palette.forEach((color, colorIndex) => {
+                const rect = figma.createRectangle();
+                rect.x = startX + colorIndex * 110; // Position rectangles with some spacing
+                rect.y = startY + paletteIndex * 150; // Space rows apart
+                rect.resize(100, 100);
+                rect.fills = [
+                    { type: "SOLID", color: hexToRgb(color), boundVariables: {} },
+                ];
+                figma.currentPage.appendChild(rect);
+                nodes.push(rect);
+            });
+        });
+        figma.currentPage.selection = nodes;
+        //figma.viewport.scrollAndZoomIntoView(nodes);
+    });
 }
 // Helper function to convert hex color to RGB
 function hexToRgb(hex) {
@@ -295,29 +340,54 @@ function handleAssignColorMessage(msg) {
                     figma.notify("No palettes received from the API.");
                     return;
                 }
+                const frameTitles = ["Enhanced", "PL", "Sequential", "Enhanced", "PL"];
+                const paletteWidth = 5 * 90; // Width of five color boxes
+                const minSpacing = 50; // Minimum spacing if frame width is larger
                 // Now, after receiving the palettes, start cloning and assigning colors
-                colorPalettes.forEach((palette, index) => {
-                    if (true) {
-                        let newFrame = frame.clone();
-                        const offsetX = frame.width / 8; // Increase the X offset to 400 pixels
-                        newFrame.x = frame.x + frame.width * (index + 1) + offsetX * (index + 1);
-                        newFrame.name = `Palette Frame ${index + 1}`;
-                        console.log(`Frame ${newFrame.name} created`);
-                        const allLayers = newFrame.findAll();
-                        const layers = allLayers.map((layer, idx) => {
-                            const newName = `${layer.name}_${index}_${idx}`; // Create a new unique name
-                            layer.name = newName; // Update the layer name directly
-                            console.log(`Updated Layer Name: ${newName}`); // Log the updated name
-                            // Use the getLayerColor function to extract the color from the layer
-                            const color = getLayerColor(layer);
-                            return { name: newName, color: color };
-                        });
-                        layers.reverse();
-                        // Log the palette being applied to each frame
-                        console.log(`Applying colors to Frame ${newFrame.name}:`, palette);
-                        assignColorsToLayers(layers, palette, index);
-                    }
-                });
+                colorPalettes.forEach((palette, index) => __awaiter(this, void 0, void 0, function* () {
+                    let newFrame = frame.clone();
+                    // Determine spacing conditionally
+                    const offsetX = frame.width > paletteWidth ? frame.width + minSpacing : paletteWidth + minSpacing + 300;
+                    newFrame.x = frame.x + (index + 1) * offsetX;
+                    newFrame.name = `Palette Frame ${index + 1}`;
+                    console.log(`Frame ${newFrame.name} created`);
+                    const allLayers = newFrame.findAll();
+                    const layers = allLayers.map((layer, idx) => {
+                        const newName = `${layer.name}_${index}_${idx}`; // Create a new unique name
+                        layer.name = newName; // Update the layer name directly
+                        console.log(`Updated Layer Name: ${newName}`); // Log the updated name
+                        // Use the getLayerColor function to extract the color from the layer
+                        const color = getLayerColor(layer);
+                        return { name: newName, color: color };
+                    });
+                    layers.reverse();
+                    // Log the palette being applied to each frame
+                    console.log(`Applying colors to Frame ${newFrame.name}:`, palette);
+                    assignColorsToLayers(layers, palette, index);
+                    // Load font before creating the text node
+                    yield figma.loadFontAsync({ family: "Inter", style: "Regular" });
+                    // Create a text node above the frame
+                    const textNode = figma.createText();
+                    textNode.characters = frameTitles[index % frameTitles.length]; // Assign respective title
+                    textNode.fontSize = 128; // Set font size
+                    textNode.fills = [{ type: "SOLID", color: { r: 1, g: 1, b: 1 } }];
+                    textNode.x = newFrame.x + newFrame.width / 2 - textNode.width / 2; // Center above the frame
+                    textNode.y = newFrame.y - 350; // Position above the frame
+                    textNode.name = `Title: ${textNode.characters}`;
+                    figma.currentPage.appendChild(textNode);
+                    // Display the color palette under each frame
+                    const paletteOffsetY = newFrame.y + newFrame.height + 20; // Position the palette rectangles below the frame
+                    palette.forEach((color, colorIndex) => {
+                        const rect = figma.createRectangle();
+                        rect.x = newFrame.x + colorIndex * 90; // Adjust spacing to prevent overlap
+                        rect.y = paletteOffsetY;
+                        rect.resize(80, 80); // Increase size for each color rectangle
+                        rect.fills = [{ type: "SOLID", color: hexToRgb(color), boundVariables: {} }];
+                        rect.name = `Color ${colorIndex + 1} - ${color}`;
+                        figma.currentPage.appendChild(rect);
+                        console.log(`Added color display for ${color} under Frame ${newFrame.name}`);
+                    });
+                }));
                 figma.notify("Color assignment completed.");
             }
             catch (error) {
@@ -460,7 +530,6 @@ function blendColors(originalColor, newColor, position) {
         b: originalColor.b * (1 - blendFactor) + newColor.b * blendFactor,
     };
 }
-// PL algorithm
 // Function to calculate the average color of the layers
 function calculateAverageColor(layers) {
     let totalColor = { r: 0, g: 0, b: 0 };
